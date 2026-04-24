@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>经典坦克大战</title>
+<title>经典坦克大战 - 联机版</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -84,7 +85,7 @@
   #overlay {
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0,0,0,0.9);
+    background: rgba(0,0,0,0.92);
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -132,6 +133,18 @@
     background: #4af;
   }
   .btn-blue:hover { background: #6cf; }
+  .btn-green {
+    background: #4f4;
+  }
+  .btn-green:hover { background: #6f6; }
+  .btn-red {
+    background: #e44;
+  }
+  .btn-red:hover { background: #f66; }
+  .btn-small {
+    padding: 10px 24px;
+    font-size: 14px;
+  }
   .sound-toggle {
     margin-top: 15px;
     padding: 8px 20px;
@@ -146,22 +159,176 @@
   .sound-toggle:hover { background: #444; color: #fff; }
   #gameOverText { color: #e33; font-size: 36px; margin-bottom: 10px; }
   #finalScore { color: #f0c040; font-size: 18px; margin-bottom: 20px; }
+
+  /* 联机界面样式 */
+  .online-panel {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    padding: 20px;
+  }
+  .online-panel.active { display: flex; }
+  .room-code-display {
+    font-size: 42px;
+    font-weight: bold;
+    color: #4f4;
+    letter-spacing: 8px;
+    background: #1a1a1a;
+    border: 2px solid #4f4;
+    border-radius: 10px;
+    padding: 15px 30px;
+    user-select: all;
+    text-shadow: 0 0 10px rgba(68,255,68,0.3);
+  }
+  .room-code-input {
+    font-size: 28px;
+    font-weight: bold;
+    color: #4af;
+    letter-spacing: 8px;
+    background: #1a1a1a;
+    border: 2px solid #4af;
+    border-radius: 10px;
+    padding: 12px 20px;
+    text-align: center;
+    width: 220px;
+    outline: none;
+    font-family: 'Courier New', monospace;
+  }
+  .room-code-input::placeholder {
+    color: #555;
+    letter-spacing: 4px;
+    font-size: 16px;
+  }
+  .status-text {
+    font-size: 14px;
+    color: #888;
+    text-align: center;
+    line-height: 1.6;
+  }
+  .status-text.connected { color: #4f4; }
+  .status-text.error { color: #e44; }
+  .spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid #555;
+    border-top: 3px solid #f0c040;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  .copy-hint {
+    font-size: 11px;
+    color: #666;
+    margin-top: -8px;
+  }
+  .net-status {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background: rgba(0,0,0,0.8);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 11px;
+    z-index: 200;
+    display: none;
+  }
+  .net-status.show { display: block; }
+  .net-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .net-dot.host { background: #4f4; }
+  .net-dot.client { background: #4af; }
+  .net-dot.ping { background: #f0c040; }
+  .latency-display { color: #f0c040; margin-left: 8px; }
 </style>
 </head>
 <body>
 
+<div id="netStatus" class="net-status">
+  <span class="net-dot" id="netDot"></span>
+  <span id="netRole"></span>
+  <span class="latency-display" id="latencyDisplay"></span>
+</div>
+
 <div id="overlay">
-  <h1>⚔ 坦克大战 ⚔</h1>
-  <h2>经典重制版</h2>
-  <div class="subtitle">保护司令部，消灭所有敌军！</div>
-  <div class="btn-group">
-    <button class="btn" id="startBtn1P">单人对战</button>
-    <button class="btn btn-blue" id="startBtn2P">双人对战</button>
+  <!-- 主菜单 -->
+  <div id="mainMenu">
+    <h1>⚔ 坦克大战 ⚔</h1>
+    <h2>联机版</h2>
+    <div class="subtitle">保护司令部，消灭所有敌军！</div>
+    <div class="btn-group">
+      <button class="btn" id="startBtn1P">单人对战</button>
+      <button class="btn btn-blue" id="startBtn2P">双人对战</button>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-green btn-small" id="onlineBtn">🌐 联机对战</button>
+    </div>
+    <div style="color:#666;font-size:11px;margin-top:10px;text-align:center;line-height:1.8">
+      玩家1: <span style="color:#4f4">方向键移动 + 空格射击</span><br>
+      玩家2: <span style="color:#4af">WASD移动 + F射击</span><br>
+      联机: 房主方向键+空格 / 加入者WASD+F<br>
+      P: 暂停 &nbsp; M: 静音 &nbsp; R: 重新开始
+    </div>
   </div>
-  <div style="color:#666;font-size:11px;margin-top:10px;text-align:center;line-height:1.8">
-    玩家1: <span style="color:#4f4">方向键移动 + 空格射击</span><br>
-    玩家2: <span style="color:#4af">WASD移动 + F射击</span><br>
-    P: 暂停 &nbsp; M: 静音 &nbsp; R: 重新开始
+
+  <!-- 联机面板 -->
+  <div id="onlineMenu" class="online-panel">
+    <h1>🌐 联机对战</h1>
+    <h2>与好友跨屏作战</h2>
+    <div style="color:#999;font-size:11px;margin:8px 0;line-height:1.6;text-align:center;background:#1a1a1a;padding:8px;border-radius:6px;">
+      ⚠️ 联机需要双方网络通畅<br>
+      如连接失败，可能需要科学上网<br>
+      房主: 方向键+空格 &nbsp; 加入者: WASD+F
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-green btn-small" id="createRoomBtn">创建房间</button>
+      <button class="btn btn-blue btn-small" id="joinRoomBtn">加入房间</button>
+    </div>
+    <button class="btn btn-small" id="onlineBackBtn" style="background:#555;margin-top:5px;">← 返回</button>
+  </div>
+
+  <!-- 创建房间面板 -->
+  <div id="createPanel" class="online-panel">
+    <h2 style="color:#4f4">🏠 创建房间</h2>
+    <div class="status-text" id="createStatus">
+      <span class="spinner"></span>正在创建房间...
+    </div>
+    <div id="roomCodeBox" style="display:none">
+      <div class="subtitle" style="margin-bottom:8px">将房间号分享给好友</div>
+      <div class="room-code-display" id="roomCodeDisplay">------</div>
+      <div class="copy-hint">点击房间号可选中复制</div>
+    </div>
+    <div class="status-text" id="waitStatus" style="display:none">
+      <span class="spinner"></span>等待好友加入...
+    </div>
+    <div id="connectedInfo" style="display:none">
+      <div class="status-text connected">✅ 好友已连接！</div>
+      <div class="btn-group" style="margin-top:15px">
+        <button class="btn btn-green" id="startOnlineBtn">开始游戏！</button>
+      </div>
+    </div>
+    <button class="btn btn-small" id="createBackBtn" style="background:#555;margin-top:10px;">← 取消</button>
+  </div>
+
+  <!-- 加入房间面板 -->
+  <div id="joinPanel" class="online-panel">
+    <h2 style="color:#4af">🔗 加入房间</h2>
+    <div class="subtitle" style="margin-bottom:8px">输入好友的房间号</div>
+    <input type="text" class="room-code-input" id="roomCodeInput" placeholder="输入6位房间号" maxlength="6" autocomplete="off">
+    <div class="btn-group" style="margin-top:10px">
+      <button class="btn btn-blue btn-small" id="connectBtn">连接</button>
+    </div>
+    <div class="status-text" id="joinStatus"></div>
+    <button class="btn btn-small" id="joinBackBtn" style="background:#555;margin-top:10px;">← 返回</button>
   </div>
 </div>
 
@@ -193,7 +360,7 @@
     </div>
     <div class="panel">
       <h3>操作</h3>
-      <div class="controls">
+      <div class="controls" id="controlsPanel">
         <span class="p1-tag">P1:</span> <span>↑↓←→</span> 移动 <span>空格</span> 射击<br>
         <span class="p2-tag">P2:</span> <span>WASD</span> 移动 <span>F</span> 射击<br>
         <span>P</span> 暂停 <span>M</span> 静音 <span>R</span> 重启
@@ -267,7 +434,6 @@ function playExplosionSound() {
   noiseGain.connect(audioCtx.destination);
   noise.start(now);
   noise.stop(now + 0.3);
-  // 低频震爆
   const osc = audioCtx.createOscillator();
   const oscGain = audioCtx.createGain();
   osc.type = 'sine';
@@ -495,6 +661,607 @@ let frameCount = 0;
 let keys = {};
 let baseAlive = true;
 
+// ============== 联机系统 ==============
+let netMode = 'local'; // 'local' | 'host' | 'client'
+let peer = null;
+let conn = null;
+let roomCode = '';
+let lastPingTime = 0;
+let currentLatency = 0;
+
+// 客户端远程输入（主机端使用）
+let remoteKeys = { up: false, down: false, left: false, right: false, fire: false };
+
+// 客户端渲染用的远程状态
+let remoteState = null;
+let stateSyncInterval = null;
+
+function generateRoomCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return code;
+}
+
+function showPanel(panelId) {
+  ['mainMenu', 'onlineMenu', 'createPanel', 'joinPanel'].forEach(id => {
+    document.getElementById(id).style.display = id === panelId ? (id === 'mainMenu' ? '' : 'flex') : 'none';
+  });
+  // Keep overlay visible but remove hidden class
+  document.getElementById('overlay').classList.remove('hidden');
+}
+
+function showNetStatus(role) {
+  const el = document.getElementById('netStatus');
+  el.classList.add('show');
+  const dot = document.getElementById('netDot');
+  const roleEl = document.getElementById('netRole');
+  dot.className = 'net-dot ' + (role === 'host' ? 'host' : 'client');
+  roleEl.textContent = role === 'host' ? '🏠 房主' : '🔗 加入者';
+}
+
+function hideNetStatus() {
+  document.getElementById('netStatus').classList.remove('show');
+}
+
+function updateLatencyDisplay() {
+  document.getElementById('latencyDisplay').textContent = currentLatency > 0 ? currentLatency + 'ms' : '';
+}
+
+// ============== PeerJS 联机逻辑 ==============
+let pingIntervalId = null;
+
+// PeerJS 配置：多信令服务器 + STUN/TURN
+const PEER_CONFIGS = [
+  {
+    // 配置1：PeerJS 默认服务器 + 增强ICE服务器
+    debug: 1,
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+      ]
+    }
+  },
+  {
+    // 配置2：使用 PeerJS 备用端口
+    debug: 1,
+    host: '0.peerjs.com',
+    port: 443,
+    secure: true,
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ]
+    }
+  }
+];
+
+let currentConfigIndex = 0;
+let PEER_CONFIG = PEER_CONFIGS[0];
+
+function cleanupPeer() {
+  if (pingIntervalId) { clearInterval(pingIntervalId); pingIntervalId = null; }
+  if (conn) { try { conn.close(); } catch(e) {} conn = null; }
+  if (peer) { try { peer.destroy(); } catch(e) {} peer = null; }
+}
+
+function createRoom() {
+  cleanupPeer();
+  currentConfigIndex = 0; // 重置配置索引
+  showPanel('createPanel');
+  document.getElementById('createStatus').innerHTML = '<span class="spinner"></span>正在创建房间（尝试配置 ' + (currentConfigIndex + 1) + '/' + PEER_CONFIGS.length + '）...';
+  document.getElementById('roomCodeBox').style.display = 'none';
+  document.getElementById('waitStatus').style.display = 'none';
+  document.getElementById('connectedInfo').style.display = 'none';
+
+  roomCode = generateRoomCode();
+  const peerId = 'tank-' + roomCode;
+  PEER_CONFIG = PEER_CONFIGS[currentConfigIndex];
+
+  peer = new Peer(peerId, PEER_CONFIG);
+
+  // 连接超时检测：5秒内未 open 则尝试下一个配置
+  let openTimeout = setTimeout(() => {
+    if (peer && !peer.open && !peer.destroyed) {
+      console.log('Config', currentConfigIndex, 'timed out, trying next...');
+      try { peer.destroy(); } catch(e) {}
+      peer = null;
+      tryNextConfig_createRoom();
+    }
+  }, 8000);
+
+  peer.on('open', (id) => {
+    clearTimeout(openTimeout);
+    console.log('Room created, peer ID:', id, '(config', currentConfigIndex, ')');
+    document.getElementById('createStatus').innerHTML = '✅ 房间创建成功！';
+    document.getElementById('roomCodeBox').style.display = '';
+    document.getElementById('roomCodeDisplay').textContent = roomCode;
+    document.getElementById('waitStatus').style.display = '';
+    document.getElementById('waitStatus').innerHTML = '<span class="spinner"></span>等待好友加入...';
+  });
+
+  peer.on('connection', (connection) => {
+    console.log('Incoming connection from client');
+    conn = connection;
+    setupConnListeners(true);
+    // 主机端：连接可能还没 open，等 open 事件；也可能已经 open
+    if (conn.open) {
+      onConnectionOpen(true);
+    }
+  });
+
+  peer.on('error', (err) => {
+    console.error('Peer error:', err.type, err);
+    if (err.type === 'unavailable-id') {
+      peer.destroy();
+      createRoom(); // 重试新房间号
+    } else if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error' || err.type === 'socket-closed') {
+      // 网络错误：尝试下一个信令服务器配置
+      tryNextConfig_createRoom();
+    } else {
+      document.getElementById('createStatus').innerHTML = '<span class="error">❌ 创建失败: ' + err.type + '</span>';
+    }
+  });
+
+  peer.on('disconnected', () => {
+    console.log('Peer disconnected from signaling server, attempting reconnect...');
+    if (peer && !peer.destroyed) {
+      peer.reconnect();
+    }
+  });
+}
+
+function joinRoom(code) {
+  cleanupPeer();
+  currentConfigIndex = 0; // 重置配置索引
+  showPanel('joinPanel');
+  const statusEl = document.getElementById('joinStatus');
+  statusEl.innerHTML = '<span class="spinner"></span>正在连接信令服务器（配置 ' + (currentConfigIndex + 1) + '/' + PEER_CONFIGS.length + '）...';
+
+  roomCode = code.toUpperCase();
+  const targetId = 'tank-' + roomCode;
+  PEER_CONFIG = PEER_CONFIGS[currentConfigIndex];
+
+  peer = new Peer(undefined, PEER_CONFIG);
+
+  // 连接超时：8秒内未 open 则尝试下一个配置
+  let openTimeout = setTimeout(() => {
+    if (peer && !peer.open && !peer.destroyed) {
+      console.log('Join config', currentConfigIndex, 'timed out, trying next...');
+      try { peer.destroy(); } catch(e) {}
+      peer = null;
+      tryNextConfig_joinRoom(code);
+    }
+  }, 8000);
+
+  peer.on('open', (myId) => {
+    clearTimeout(openTimeout);
+    console.log('My peer ID:', myId, ', connecting to:', targetId, '(config', currentConfigIndex, ')');
+    statusEl.innerHTML = '<span class="spinner"></span>正在连接房间 ' + roomCode + '...';
+    conn = peer.connect(targetId, { reliable: true });
+
+    // 设置连接监听（在 connect 之后立即注册，避免错过事件）
+    setupConnListeners(false);
+
+    // 连接可能很快 open，检查一下
+    if (conn.open) {
+      onConnectionOpen(false);
+    }
+
+    // 连接超时检测
+    setTimeout(() => {
+      if (conn && !conn.open) {
+        statusEl.innerHTML = '<span class="error">❌ 连接超时，请检查：<br>1. 房间号是否正确<br>2. 房主是否在线<br>3. 网络是否通畅<br>4. 是否需要科学上网</span>';
+      }
+    }, 15000);
+  });
+
+  peer.on('error', (err) => {
+    console.error('Peer error:', err.type, err);
+    if (err.type === 'peer-unavailable') {
+      statusEl.innerHTML = '<span class="error">❌ 找不到该房间，请检查房间号</span>';
+    } else if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error' || err.type === 'socket-closed') {
+      // 网络错误：尝试下一个信令服务器配置
+      tryNextConfig_joinRoom(code);
+    } else {
+      statusEl.innerHTML = '<span class="error">❌ 连接失败（' + err.type + '）</span>';
+    }
+  });
+
+  peer.on('disconnected', () => {
+    console.log('Peer disconnected from signaling server, attempting reconnect...');
+    if (peer && !peer.destroyed) {
+      peer.reconnect();
+    }
+  });
+}
+
+// 自动尝试下一个信令服务器配置
+function tryNextConfig_createRoom() {
+  currentConfigIndex++;
+  if (currentConfigIndex < PEER_CONFIGS.length) {
+    console.log('Trying config', currentConfigIndex, '...');
+    createRoom(); // 用新配置重试
+  } else {
+    currentConfigIndex = 0;
+    document.getElementById('createStatus').innerHTML =
+      '<span class="error">❌ 所有信令服务器均连接失败<br>请检查网络，可能需要科学上网<br>（PeerJS 信令服务器需要翻墙访问）</span>';
+  }
+}
+
+function tryNextConfig_joinRoom(code) {
+  currentConfigIndex++;
+  if (currentConfigIndex < PEER_CONFIGS.length) {
+    console.log('Trying config', currentConfigIndex, '...');
+    joinRoom(code); // 用新配置重试
+  } else {
+    currentConfigIndex = 0;
+    const statusEl = document.getElementById('joinStatus');
+    statusEl.innerHTML =
+      '<span class="error">❌ 所有信令服务器均连接失败<br>请检查网络，可能需要科学上网<br>（PeerJS 信令服务器需要翻墙访问）</span>';
+  }
+}
+
+function setupConnListeners(isHost) {
+  if (!conn) return;
+
+  conn.on('open', () => {
+    console.log('Connection opened! isHost:', isHost);
+    onConnectionOpen(isHost);
+  });
+
+  conn.on('data', (data) => {
+    handleNetData(data);
+  });
+
+  conn.on('close', () => {
+    console.log('Connection closed');
+    if (pingIntervalId) { clearInterval(pingIntervalId); pingIntervalId = null; }
+    if (gameRunning) {
+      gamePaused = true;
+      alert('对方已断开连接！');
+      resetToMainMenu();
+    } else {
+      if (isHost) {
+        document.getElementById('connectedInfo').style.display = 'none';
+        document.getElementById('waitStatus').style.display = '';
+        document.getElementById('waitStatus').innerHTML = '<span class="spinner"></span>等待好友加入...';
+      } else {
+        document.getElementById('joinStatus').innerHTML = '<span class="error">连接已断开</span>';
+      }
+    }
+  });
+
+  conn.on('error', (err) => {
+    console.error('Connection error:', err);
+  });
+}
+
+function onConnectionOpen(isHost) {
+  netMode = isHost ? 'host' : 'client';
+  showNetStatus(netMode);
+
+  if (isHost) {
+    document.getElementById('waitStatus').style.display = 'none';
+    document.getElementById('connectedInfo').style.display = '';
+  } else {
+    document.getElementById('joinStatus').innerHTML = '<span class="connected">✅ 已连接！等待房主开始游戏...</span>';
+  }
+
+  // 启动 ping
+  if (pingIntervalId) clearInterval(pingIntervalId);
+  pingIntervalId = setInterval(() => {
+    if (conn && conn.open) {
+      lastPingTime = Date.now();
+      conn.send({ type: 'ping' });
+    }
+  }, 2000);
+}
+
+function handleNetData(data) {
+  switch (data.type) {
+    case 'ping':
+      conn.send({ type: 'pong' });
+      break;
+    case 'pong':
+      currentLatency = Date.now() - lastPingTime;
+      updateLatencyDisplay();
+      break;
+
+    // === 客户端 → 主机 ===
+    case 'input':
+      remoteKeys = data.keys;
+      break;
+
+    // === 主机 → 客户端 ===
+    case 'gameState':
+      remoteState = data.state;
+      // 客户端根据远程状态触发音效
+      if (data.events) {
+        for (const evt of data.events) {
+          if (evt === 'shoot_player') playShootSound(true);
+          else if (evt === 'shoot_enemy') playShootSound(false);
+          else if (evt === 'explosion') playExplosionSound();
+          else if (evt === 'hit') playHitSound();
+          else if (evt === 'steel_hit') playSteelHitSound();
+          else if (evt === 'level_up') playLevelUpSound();
+          else if (evt === 'game_over') playGameOverSound();
+          else if (evt === 'spawn') playSpawnSound();
+        }
+      }
+      // 同步UI
+      if (data.state) {
+        score = data.state.score;
+        level = data.state.level;
+        lives1 = data.state.lives1;
+        lives2 = data.state.lives2;
+        enemiesPerWave = data.state.enemiesPerWave;
+        enemiesKilled = data.state.enemiesKilled;
+        updateUI();
+      }
+      break;
+
+    case 'startGame':
+      initAudio();
+      twoPlayerMode = true;
+      netMode = 'client';
+      gameOver = false;
+      gameRunning = true;
+      gamePaused = false;
+      baseAlive = true;
+      document.getElementById('overlay').classList.add('hidden');
+      document.getElementById('p2Row').style.display = 'flex';
+      startBGM();
+      break;
+
+    case 'pause':
+      gamePaused = data.paused;
+      break;
+
+    case 'gameOver':
+      gameOver = true;
+      gameRunning = false;
+      stopBGM();
+      playGameOverSound();
+      let overlay = document.getElementById('overlay');
+      let reason = data.reason || '游戏结束';
+      overlay.innerHTML = `
+        <div id="gameOverText">💀 游戏结束</div>
+        <div id="finalScore">最终得分: ${data.score || score} | 关卡: ${data.level || level}</div>
+        <div class="subtitle">${reason}</div>
+        <button class="btn" onclick="resetToMainMenu()">返回主菜单</button>
+      `;
+      overlay.classList.remove('hidden');
+      break;
+
+    case 'restart':
+      resetToMainMenu();
+      break;
+  }
+}
+
+function sendToPeer(data) {
+  if (conn && conn.open) {
+    conn.send(data);
+  }
+}
+
+// 主机端：收集游戏状态并发送
+let frameEvents = [];
+
+function hostSendState() {
+  if (netMode !== 'host' || !conn || !conn.open) return;
+
+  const state = {
+    map: map,
+    player1: player1 ? { x: player1.x, y: player1.y, dir: player1.dir, alive: player1.alive,
+      invincible: player1.invincible, moveAnim: player1.moveAnim, cooldown: player1.cooldown } : null,
+    player2: player2 ? { x: player2.x, y: player2.y, dir: player2.dir, alive: player2.alive,
+      invincible: player2.invincible, moveAnim: player2.moveAnim, cooldown: player2.cooldown } : null,
+    enemies: enemies.map(e => ({ x: e.x, y: e.y, dir: e.dir, alive: e.alive,
+      invincible: e.invincible, moveAnim: e.moveAnim })),
+    bullets: bullets.map(b => ({ x: b.x, y: b.y, dir: b.dir, owner: b.owner, size: b.size })),
+    explosions: explosions.map(e => ({ x: e.x, y: e.y, frame: e.frame, maxFrame: e.maxFrame, big: e.big })),
+    particles: particles.map(p => ({ x: p.x, y: p.y, vx: p.vx, vy: p.vy, life: p.life, color: p.color, size: p.size })),
+    score, level, lives1, lives2,
+    enemiesPerWave, enemiesKilled, enemiesSpawned, maxEnemiesOnScreen,
+    baseAlive, frameCount
+  };
+
+  sendToPeer({ type: 'gameState', state, events: frameEvents });
+  frameEvents = [];
+}
+
+// 客户端：发送输入
+function clientSendInput() {
+  if (netMode !== 'client' || !conn || !conn.open) return;
+
+  const myKeys = {
+    up: keys['KeyW'] || false,
+    down: keys['KeyS'] || false,
+    left: keys['KeyA'] || false,
+    right: keys['KeyD'] || false,
+    fire: keys['KeyF'] || false
+  };
+  sendToPeer({ type: 'input', keys: myKeys });
+}
+
+function resetToMainMenu() {
+  stopBGM();
+  gameRunning = false;
+  gameOver = false;
+  netMode = 'local';
+  remoteKeys = { up: false, down: false, left: false, right: false, fire: false };
+  remoteState = null;
+
+  if (stateSyncInterval) { clearInterval(stateSyncInterval); stateSyncInterval = null; }
+  cleanupPeer();
+  hideNetStatus();
+
+  let overlay = document.getElementById('overlay');
+  overlay.innerHTML = `
+    <div id="mainMenu">
+      <h1>⚔ 坦克大战 ⚔</h1>
+      <h2>联机版</h2>
+      <div class="subtitle">保护司令部，消灭所有敌军！</div>
+      <div class="btn-group">
+        <button class="btn" id="startBtn1P">单人对战</button>
+        <button class="btn btn-blue" id="startBtn2P">双人对战</button>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-green btn-small" id="onlineBtn">🌐 联机对战</button>
+      </div>
+      <div style="color:#666;font-size:11px;margin-top:10px;text-align:center;line-height:1.8">
+        玩家1: <span style="color:#4f4">方向键移动 + 空格射击</span><br>
+        玩家2: <span style="color:#4af">WASD移动 + F射击</span><br>
+        联机: 房主方向键+空格 / 加入者WASD+F<br>
+        P: 暂停 &nbsp; M: 静音 &nbsp; R: 重新开始
+      </div>
+    </div>
+
+    <div id="onlineMenu" class="online-panel">
+      <h1>🌐 联机对战</h1>
+      <h2>与好友跨屏作战</h2>
+      <div style="color:#999;font-size:11px;margin:8px 0;line-height:1.6;text-align:center;background:#1a1a1a;padding:8px;border-radius:6px;">
+        ⚠️ 联机需要双方网络通畅<br>
+        如连接失败，可能需要科学上网<br>
+        房主: 方向键+空格 &nbsp; 加入者: WASD+F
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-green btn-small" id="createRoomBtn">创建房间</button>
+        <button class="btn btn-blue btn-small" id="joinRoomBtn">加入房间</button>
+      </div>
+      <button class="btn btn-small" id="onlineBackBtn" style="background:#555;margin-top:5px;">← 返回</button>
+    </div>
+
+    <div id="createPanel" class="online-panel">
+      <h2 style="color:#4f4">🏠 创建房间</h2>
+      <div class="status-text" id="createStatus"><span class="spinner"></span>正在创建房间...</div>
+      <div id="roomCodeBox" style="display:none">
+        <div class="subtitle" style="margin-bottom:8px">将房间号分享给好友</div>
+        <div class="room-code-display" id="roomCodeDisplay">------</div>
+        <div class="copy-hint">点击房间号可选中复制</div>
+      </div>
+      <div class="status-text" id="waitStatus" style="display:none"><span class="spinner"></span>等待好友加入...</div>
+      <div id="connectedInfo" style="display:none">
+        <div class="status-text connected">✅ 好友已连接！</div>
+        <div class="btn-group" style="margin-top:15px">
+          <button class="btn btn-green" id="startOnlineBtn">开始游戏！</button>
+        </div>
+      </div>
+      <button class="btn btn-small" id="createBackBtn" style="background:#555;margin-top:10px;">← 取消</button>
+    </div>
+
+    <div id="joinPanel" class="online-panel">
+      <h2 style="color:#4af">🔗 加入房间</h2>
+      <div class="subtitle" style="margin-bottom:8px">输入好友的房间号</div>
+      <input type="text" class="room-code-input" id="roomCodeInput" placeholder="输入6位房间号" maxlength="6" autocomplete="off">
+      <div class="btn-group" style="margin-top:10px">
+        <button class="btn btn-blue btn-small" id="connectBtn">连接</button>
+      </div>
+      <div class="status-text" id="joinStatus"></div>
+      <button class="btn btn-small" id="joinBackBtn" style="background:#555;margin-top:10px;">← 返回</button>
+    </div>
+  `;
+  overlay.classList.remove('hidden');
+  bindMenuEvents();
+}
+
+function bindMenuEvents() {
+  const btn1P = document.getElementById('startBtn1P');
+  const btn2P = document.getElementById('startBtn2P');
+  const onlineBtn = document.getElementById('onlineBtn');
+  const createRoomBtn = document.getElementById('createRoomBtn');
+  const joinRoomBtn = document.getElementById('joinRoomBtn');
+  const onlineBackBtn = document.getElementById('onlineBackBtn');
+  const createBackBtn = document.getElementById('createBackBtn');
+  const joinBackBtn = document.getElementById('joinBackBtn');
+  const startOnlineBtn = document.getElementById('startOnlineBtn');
+  const connectBtn = document.getElementById('connectBtn');
+  const roomCodeInput = document.getElementById('roomCodeInput');
+
+  if (btn1P) btn1P.addEventListener('click', () => startGame(false));
+  if (btn2P) btn2P.addEventListener('click', () => startGame(true));
+  if (onlineBtn) onlineBtn.addEventListener('click', () => showPanel('onlineMenu'));
+  if (createRoomBtn) createRoomBtn.addEventListener('click', createRoom);
+  if (joinRoomBtn) joinRoomBtn.addEventListener('click', () => {
+    showPanel('joinPanel');
+    document.getElementById('joinStatus').innerHTML = '';
+    setTimeout(() => { if (roomCodeInput) roomCodeInput.focus(); }, 100);
+  });
+  if (onlineBackBtn) onlineBackBtn.addEventListener('click', () => showPanel('mainMenu'));
+  if (createBackBtn) createBackBtn.addEventListener('click', () => {
+    cleanupPeer();
+    hideNetStatus();
+    showPanel('onlineMenu');
+  });
+  if (joinBackBtn) joinBackBtn.addEventListener('click', () => {
+    cleanupPeer();
+    hideNetStatus();
+    showPanel('onlineMenu');
+  });
+  if (startOnlineBtn) startOnlineBtn.addEventListener('click', startOnlineGame);
+  if (connectBtn) connectBtn.addEventListener('click', () => {
+    const code = roomCodeInput ? roomCodeInput.value.trim() : '';
+    if (code.length !== 6) {
+      document.getElementById('joinStatus').innerHTML = '请输入6位房间号';
+      return;
+    }
+    joinRoom(code);
+  });
+  if (roomCodeInput) {
+    roomCodeInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const code = roomCodeInput.value.trim();
+        if (code.length === 6) joinRoom(code);
+      }
+    });
+    roomCodeInput.addEventListener('input', () => {
+      roomCodeInput.value = roomCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    });
+  }
+}
+
+function startOnlineGame() {
+  if (netMode !== 'host' || !conn || !conn.open) return;
+  initAudio();
+  twoPlayerMode = true;
+  gameOver = false;
+  gameRunning = true;
+  gamePaused = false;
+  baseAlive = true;
+  score = 0;
+  level = 1;
+  lives1 = 3;
+  lives2 = 3;
+  bullets = [];
+  explosions = [];
+  particles = [];
+  enemies = [];
+  frameEvents = [];
+
+  initLevel(level);
+  document.getElementById('overlay').classList.add('hidden');
+  document.getElementById('p2Row').style.display = 'flex';
+  startBGM();
+
+  // Tell client to start
+  sendToPeer({ type: 'startGame' });
+
+  // Start state sync (every 2 frames ~33ms at 60fps)
+  if (stateSyncInterval) clearInterval(stateSyncInterval);
+  stateSyncInterval = setInterval(() => {
+    hostSendState();
+  }, 33);
+}
+
 // ============== 关卡地图 ==============
 function createLevel(lvl) {
   let m = [];
@@ -703,6 +1470,9 @@ class Tank {
       speed: BULLET_SPEED, owner: this.type, size: BULLET_SIZE
     });
     playShootSound(this.type === 'p1' || this.type === 'p2');
+    if (netMode === 'host') {
+      frameEvents.push(isPlayerType(this.type) ? 'shoot_player' : 'shoot_enemy');
+    }
   }
 
   update() {
@@ -752,6 +1522,7 @@ function updateBullets() {
     if (b.x < 0 || b.x > CW || b.y < 0 || b.y > CH) {
       playHitSound();
       createSmallExplosion(b.x, b.y);
+      if (netMode === 'host') frameEvents.push('hit');
       bullets.splice(i, 1);
       continue;
     }
@@ -774,16 +1545,19 @@ function updateBullets() {
           map[rr][cc] = EMPTY;
           hitTile = true;
           playHitSound();
+          if (netMode === 'host') frameEvents.push('hit');
           createSmallExplosion(cc * TILE + TILE / 2, rr * TILE + TILE / 2);
         } else if (tile === STEEL) {
           hitTile = true;
           playSteelHitSound();
+          if (netMode === 'host') frameEvents.push('steel_hit');
           createSmallExplosion(cc * TILE + TILE / 2, rr * TILE + TILE / 2);
         } else if (tile === BASE) {
           map[rr][cc] = BASE_DEAD;
           baseAlive = false;
           hitTile = true;
           playExplosionSound();
+          if (netMode === 'host') frameEvents.push('explosion');
           createExplosion(cc * TILE + TILE / 2, rr * TILE + TILE / 2);
         }
       }
@@ -800,6 +1574,7 @@ function updateBullets() {
           e.alive = false;
           createExplosion(e.x + TANK_SIZE / 2, e.y + TANK_SIZE / 2);
           playExplosionSound();
+          if (netMode === 'host') frameEvents.push('explosion');
           score += 100;
           enemiesKilled++;
           bullets.splice(i, 1);
@@ -828,6 +1603,7 @@ function updateBullets() {
         let b2 = bullets[j];
         if (b.owner !== b2.owner && rectsOverlap(bRect, { x: b2.x, y: b2.y, w: b2.size, h: b2.size })) {
           playHitSound();
+          if (netMode === 'host') frameEvents.push('hit');
           createSmallExplosion((b.x + b2.x) / 2, (b.y + b2.y) / 2);
           let maxI = Math.max(i, j), minI = Math.min(i, j);
           bullets.splice(maxI, 1);
@@ -913,6 +1689,7 @@ function drawExplosions() {
 function playerHit(p, pNum) {
   createExplosion(p.x + TANK_SIZE / 2, p.y + TANK_SIZE / 2);
   playExplosionSound();
+  if (netMode === 'host') frameEvents.push('explosion');
   if (pNum === 1) {
     lives1--;
     if (lives1 <= 0) { p.alive = false; }
@@ -985,6 +1762,7 @@ function spawnEnemy() {
       enemies.push(e);
       enemiesSpawned++;
       playSpawnSound();
+      if (netMode === 'host') frameEvents.push('spawn');
       createSmallExplosion(sp.x + TANK_SIZE / 2, sp.y + TANK_SIZE / 2);
       updateUI();
       return;
@@ -1062,9 +1840,13 @@ function updateUI() {
 
 // ============== 游戏流程 ==============
 function startGame(isTwoPlayer) {
-  initAudio();   // ← 关键：初始化音频上下文
+  initAudio();
   twoPlayerMode = isTwoPlayer;
+  netMode = 'local';
   document.getElementById('p2Row').style.display = isTwoPlayer ? 'flex' : 'none';
+
+  // Update controls display
+  updateControlsDisplay();
 
   score = 0;
   level = 1;
@@ -1078,10 +1860,33 @@ function startGame(isTwoPlayer) {
   explosions = [];
   particles = [];
   enemies = [];
+  frameEvents = [];
 
   initLevel(level);
   document.getElementById('overlay').classList.add('hidden');
-  startBGM();   // ← 关键：启动背景音乐
+  startBGM();
+}
+
+function updateControlsDisplay() {
+  const cp = document.getElementById('controlsPanel');
+  if (netMode === 'client') {
+    cp.innerHTML = `
+      <span style="color:#4af;font-weight:bold">你:</span> <span>WASD</span> 移动 <span>F</span> 射击<br>
+      <span>P</span> 暂停 <span>M</span> 静音
+    `;
+  } else if (netMode === 'host') {
+    cp.innerHTML = `
+      <span style="color:#4f4;font-weight:bold">你:</span> <span>↑↓←→</span> 移动 <span>空格</span> 射击<br>
+      <span style="color:#4af;font-weight:bold">队友:</span> WASD+F (远程)<br>
+      <span>P</span> 暂停 <span>M</span> 静音
+    `;
+  } else {
+    cp.innerHTML = `
+      <span class="p1-tag">P1:</span> <span>↑↓←→</span> 移动 <span>空格</span> 射击<br>
+      <span class="p2-tag">P2:</span> <span>WASD</span> 移动 <span>F</span> 射击<br>
+      <span>P</span> 暂停 <span>M</span> 静音 <span>R</span> 重启
+    `;
+  }
 }
 
 function initLevel(lvl) {
@@ -1138,6 +1943,7 @@ function nextLevel() {
   initLevel(level);
   score += 500;
   playLevelUpSound();
+  if (netMode === 'host') frameEvents.push('level_up');
   updateUI();
   gamePaused = true;
   setTimeout(() => { gamePaused = false; }, 2000);
@@ -1148,6 +1954,23 @@ function endGame(won) {
   gameRunning = false;
   stopBGM();
   playGameOverSound();
+
+  if (stateSyncInterval) {
+    clearInterval(stateSyncInterval);
+    stateSyncInterval = null;
+  }
+
+  // Notify client
+  if (netMode === 'host') {
+    let reason = !baseAlive ? '司令部被摧毁了！' : '所有玩家已阵亡！';
+    sendToPeer({
+      type: 'gameOver',
+      score: score,
+      level: level,
+      reason: reason
+    });
+  }
+
   let overlay = document.getElementById('overlay');
   let reason = !baseAlive ? '司令部被摧毁了！' : '所有玩家已阵亡！';
   overlay.innerHTML = `
@@ -1155,24 +1978,185 @@ function endGame(won) {
     <div id="finalScore">最终得分: ${score} | 关卡: ${level}</div>
     <div class="subtitle">${reason}</div>
     <div class="btn-group">
-      <button class="btn" onclick="startGame(false)">单人对战</button>
-      <button class="btn btn-blue" onclick="startGame(true)">双人对战</button>
+      <button class="btn" onclick="resetToMainMenu()">返回主菜单</button>
     </div>
   `;
   overlay.classList.remove('hidden');
 }
 
+// ============== 客户端渲染 ==============
+function drawRemoteState() {
+  if (!remoteState) return;
+
+  // Draw map from remote state
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      let tile = remoteState.map[r][c];
+      let x = c * TILE, y = r * TILE;
+      switch (tile) {
+        case BRICK:
+          ctx.fillStyle = '#8B4513'; ctx.fillRect(x, y, TILE, TILE);
+          ctx.fillStyle = '#A0522D';
+          ctx.fillRect(x + 1, y + 1, TILE / 2 - 1, TILE / 2 - 1);
+          ctx.fillRect(x + TILE / 2 + 1, y + TILE / 2 + 1, TILE / 2 - 2, TILE / 2 - 2);
+          ctx.fillStyle = '#6B3410';
+          ctx.fillRect(x + TILE / 2, y, 1, TILE);
+          ctx.fillRect(x, y + TILE / 2, TILE, 1);
+          break;
+        case STEEL:
+          ctx.fillStyle = '#888'; ctx.fillRect(x, y, TILE, TILE);
+          ctx.fillStyle = '#aaa'; ctx.fillRect(x + 1, y + 1, TILE - 2, TILE - 2);
+          ctx.fillStyle = '#ccc'; ctx.fillRect(x + 3, y + 3, TILE / 2 - 3, TILE / 2 - 3);
+          ctx.fillStyle = '#999';
+          ctx.fillRect(x + TILE / 2, y + 1, 1, TILE - 2);
+          ctx.fillRect(x + 1, y + TILE / 2, TILE - 2, 1);
+          break;
+        case WATER:
+          ctx.fillStyle = '#2244aa'; ctx.fillRect(x, y, TILE, TILE);
+          ctx.fillStyle = '#3366cc';
+          let wo = Math.sin(remoteState.frameCount * 0.05 + c) * 2;
+          ctx.fillRect(x + 2, y + 8 + wo, TILE - 4, 3);
+          ctx.fillRect(x + 4, y + 16 + wo, TILE - 8, 2);
+          break;
+        case TREE:
+          ctx.fillStyle = '#0a5c0a'; ctx.fillRect(x, y, TILE, TILE);
+          ctx.fillStyle = '#0c7c0c'; ctx.fillRect(x + 3, y + 3, TILE - 6, TILE - 6);
+          break;
+        case BASE:
+          ctx.fillStyle = '#ccc'; ctx.fillRect(x, y, TILE, TILE);
+          ctx.fillStyle = '#f0c040'; ctx.fillRect(x + 4, y + 2, TILE - 8, TILE - 4);
+          ctx.fillStyle = '#111';
+          ctx.fillRect(x + 7, y + 5, 3, 3);
+          ctx.fillRect(x + TILE - 10, y + 5, 3, 3);
+          ctx.fillRect(x + 9, y + 12, 6, 4);
+          break;
+        case BASE_DEAD:
+          ctx.fillStyle = '#333'; ctx.fillRect(x, y, TILE, TILE);
+          ctx.fillStyle = '#555'; ctx.fillRect(x + 3, y + 3, TILE - 6, TILE - 6);
+          ctx.fillStyle = '#e33'; ctx.fillRect(x + 8, y + 8, 8, 8);
+          break;
+      }
+    }
+  }
+
+  // Draw player1 (host - green)
+  if (remoteState.player1 && remoteState.player1.alive) {
+    drawRemoteTank(remoteState.player1, 'p1');
+  }
+  // Draw player2 (client - blue)
+  if (remoteState.player2 && remoteState.player2.alive) {
+    drawRemoteTank(remoteState.player2, 'p2');
+  }
+  // Draw enemies
+  for (let e of remoteState.enemies) {
+    if (e.alive) drawRemoteTank(e, 'enemy');
+  }
+  // Draw bullets
+  for (let b of remoteState.bullets) {
+    let isP = isPlayerType(b.owner);
+    ctx.fillStyle = isP ? '#ff0' : '#f80';
+    ctx.fillRect(b.x, b.y, b.size, b.size);
+    ctx.fillStyle = isP ? 'rgba(255,255,0,0.3)' : 'rgba(255,136,0,0.3)';
+    ctx.fillRect(b.x - 2, b.y - 2, b.size + 4, b.size + 4);
+  }
+  // Draw tree overlay
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (remoteState.map[r][c] === TREE) {
+        let x = c * TILE, y = r * TILE;
+        ctx.fillStyle = 'rgba(10,92,10,0.8)'; ctx.fillRect(x, y, TILE, TILE);
+        ctx.fillStyle = 'rgba(12,124,12,0.6)'; ctx.fillRect(x + 3, y + 3, TILE - 6, TILE - 6);
+      }
+    }
+  }
+  // Draw explosions & particles
+  for (let e of remoteState.explosions) {
+    let progress = e.frame / e.maxFrame;
+    let radius = e.big ? (20 * (1 - progress * 0.5)) : (8 * (1 - progress * 0.3));
+    let alpha = 1 - progress;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath(); ctx.arc(e.x, e.y, radius, 0, Math.PI * 2); ctx.fillStyle = '#f80'; ctx.fill();
+    ctx.beginPath(); ctx.arc(e.x, e.y, radius * 0.6, 0, Math.PI * 2); ctx.fillStyle = '#ff0'; ctx.fill();
+    ctx.beginPath(); ctx.arc(e.x, e.y, radius * 0.3, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+    ctx.restore();
+  }
+  for (let p of remoteState.particles) {
+    ctx.globalAlpha = p.life / 30;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.strokeStyle = '#333'; ctx.lineWidth = 1; ctx.strokeRect(0, 0, CW, CH);
+}
+
+function drawRemoteTank(data, type) {
+  const cx = data.x + TANK_SIZE / 2;
+  const cy = data.y + TANK_SIZE / 2;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(data.dir * Math.PI / 2);
+  if (data.invincible > 0 && Math.floor(data.invincible / 3) % 2) {
+    ctx.globalAlpha = 0.5;
+  }
+  const s = TANK_SIZE / 2;
+
+  if (type === 'p1') {
+    ctx.fillStyle = '#2a8c2a'; ctx.fillRect(-s, -s, TANK_SIZE, TANK_SIZE);
+    ctx.fillStyle = '#3c3'; ctx.fillRect(-s + 3, -s + 3, TANK_SIZE - 6, TANK_SIZE - 6);
+    ctx.fillStyle = '#1a5c1a'; ctx.fillRect(-s, -s, 6, TANK_SIZE); ctx.fillRect(s - 6, -s, 6, TANK_SIZE);
+    const to = (data.moveAnim % 8);
+    ctx.fillStyle = '#0a3a0a';
+    for (let i = -s + to; i < s; i += 8) { ctx.fillRect(-s, i, 6, 3); ctx.fillRect(s - 6, i, 6, 3); }
+    ctx.fillStyle = '#4d4'; ctx.fillRect(-5, -5, 10, 10);
+    ctx.fillStyle = '#3c3'; ctx.fillRect(-3, -s - 2, 6, s + 2);
+    ctx.fillStyle = '#5e5'; ctx.fillRect(-2, -s - 2, 4, s);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'; ctx.fillText('1', 0, 3);
+  } else if (type === 'p2') {
+    ctx.fillStyle = '#2a5a8c'; ctx.fillRect(-s, -s, TANK_SIZE, TANK_SIZE);
+    ctx.fillStyle = '#39c'; ctx.fillRect(-s + 3, -s + 3, TANK_SIZE - 6, TANK_SIZE - 6);
+    ctx.fillStyle = '#1a3a5c'; ctx.fillRect(-s, -s, 6, TANK_SIZE); ctx.fillRect(s - 6, -s, 6, TANK_SIZE);
+    const to = (data.moveAnim % 8);
+    ctx.fillStyle = '#0a2a3a';
+    for (let i = -s + to; i < s; i += 8) { ctx.fillRect(-s, i, 6, 3); ctx.fillRect(s - 6, i, 6, 3); }
+    ctx.fillStyle = '#4bf'; ctx.fillRect(-5, -5, 10, 10);
+    ctx.fillStyle = '#39c'; ctx.fillRect(-3, -s - 2, 6, s + 2);
+    ctx.fillStyle = '#5cf'; ctx.fillRect(-2, -s - 2, 4, s);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'; ctx.fillText('2', 0, 3);
+  } else {
+    ctx.fillStyle = '#8c2a2a'; ctx.fillRect(-s, -s, TANK_SIZE, TANK_SIZE);
+    ctx.fillStyle = '#c33'; ctx.fillRect(-s + 3, -s + 3, TANK_SIZE - 6, TANK_SIZE - 6);
+    ctx.fillStyle = '#5c1a1a'; ctx.fillRect(-s, -s, 6, TANK_SIZE); ctx.fillRect(s - 6, -s, 6, TANK_SIZE);
+    const to = (data.moveAnim % 8);
+    ctx.fillStyle = '#3a0a0a';
+    for (let i = -s + to; i < s; i += 8) { ctx.fillRect(-s, i, 6, 3); ctx.fillRect(s - 6, i, 6, 3); }
+    ctx.fillStyle = '#e44'; ctx.fillRect(-5, -5, 10, 10);
+    ctx.fillStyle = '#c33'; ctx.fillRect(-3, -s - 2, 6, s + 2);
+    ctx.fillStyle = '#f55'; ctx.fillRect(-2, -s - 2, 4, s);
+  }
+  ctx.restore();
+}
+
 // ============== 输入处理 ==============
 document.addEventListener('keydown', (e) => {
   keys[e.code] = true;
-  if (e.code === 'KeyP' && gameRunning) gamePaused = !gamePaused;
+  if (e.code === 'KeyP' && gameRunning) {
+    gamePaused = !gamePaused;
+    if (netMode === 'host') {
+      sendToPeer({ type: 'pause', paused: gamePaused });
+    }
+  }
   if (e.code === 'KeyM') toggleSound();
-  if (e.code === 'KeyR') {
+  if (e.code === 'KeyR' && netMode === 'local') {
     stopBGM();
     startGame(twoPlayerMode);
   }
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyW','KeyA','KeyS','KeyD','KeyF'].includes(e.code)) {
-    e.preventDefault();
+    // 输入框内不拦截，允许正常打字
+    if (document.activeElement && document.activeElement.tagName !== 'INPUT') {
+      e.preventDefault();
+    }
   }
 });
 document.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -1181,6 +2165,30 @@ document.addEventListener('keyup', (e) => { keys[e.code] = false; });
 function gameLoop() {
   requestAnimationFrame(gameLoop);
 
+  // === 客户端模式：只渲染远程状态 ===
+  if (netMode === 'client') {
+    if (gameRunning && !gamePaused) {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, CW, CH);
+      drawRemoteState();
+
+      // Send input every frame
+      clientSendInput();
+    }
+    if (gameRunning && gamePaused) {
+      drawRemoteState();
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(0, CH / 2 - 30, CW, 60);
+      ctx.fillStyle = '#f0c040';
+      ctx.font = 'bold 24px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText('⏸ 已暂停', CW / 2, CH / 2 + 8);
+      ctx.textAlign = 'left';
+    }
+    return;
+  }
+
+  // === 本地模式 / 主机模式 ===
   if (!gameRunning || gamePaused) {
     if (gameRunning && gamePaused) {
       drawGame();
@@ -1201,7 +2209,7 @@ function gameLoop() {
 
   frameCount++;
 
-  // 玩家1输入
+  // 玩家1输入（本地/主机都用方向键）
   if (player1 && player1.alive) {
     if (keys['ArrowUp']) player1.tryMove(UP);
     else if (keys['ArrowDown']) player1.tryMove(DOWN);
@@ -1213,11 +2221,21 @@ function gameLoop() {
 
   // 玩家2输入
   if (player2 && player2.alive) {
-    if (keys['KeyW']) player2.tryMove(UP);
-    else if (keys['KeyS']) player2.tryMove(DOWN);
-    else if (keys['KeyA']) player2.tryMove(LEFT);
-    else if (keys['KeyD']) player2.tryMove(RIGHT);
-    if (keys['KeyF']) player2.fire();
+    if (netMode === 'host') {
+      // 联机模式：使用远程输入
+      if (remoteKeys.up) player2.tryMove(UP);
+      else if (remoteKeys.down) player2.tryMove(DOWN);
+      else if (remoteKeys.left) player2.tryMove(LEFT);
+      else if (remoteKeys.right) player2.tryMove(RIGHT);
+      if (remoteKeys.fire) player2.fire();
+    } else {
+      // 本地双人模式：WASD
+      if (keys['KeyW']) player2.tryMove(UP);
+      else if (keys['KeyS']) player2.tryMove(DOWN);
+      else if (keys['KeyA']) player2.tryMove(LEFT);
+      else if (keys['KeyD']) player2.tryMove(RIGHT);
+      if (keys['KeyF']) player2.fire();
+    }
     player2.update();
   }
 
@@ -1266,8 +2284,7 @@ function drawGame() {
 }
 
 // ============== 启动 ==============
-document.getElementById('startBtn1P').addEventListener('click', () => startGame(false));
-document.getElementById('startBtn2P').addEventListener('click', () => startGame(true));
+bindMenuEvents();
 gameLoop();
 </script>
 </body>
